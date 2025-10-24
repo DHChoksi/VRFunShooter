@@ -16,6 +16,12 @@ public class HeadBobMoveProvider : LocomotionProvider
     [Tooltip("Vector2 move input (e.g., left joystick).")]
     [SerializeField] InputActionProperty moveAction;
 
+    [Header("Auto-Binding (optional)")]
+    [SerializeField] bool autoBindLeftThumbstick = true;
+
+    InputAction runtimeMoveAction;
+    bool UsingRuntimeAction => runtimeMoveAction != null;
+
     [Header("Movement")]
     [Tooltip("Meters per second walking speed.")]
     [SerializeField, Min(0f)] float moveSpeed = 2.0f;
@@ -67,18 +73,30 @@ public class HeadBobMoveProvider : LocomotionProvider
             camLocalStart = playerCamera.transform.localPosition;
             cachedHadCamera = true;
         }
+
+        EnsureMoveActionBound();
     }
 
     protected void OnEnable()
     {
-        moveAction.action?.Enable();
+        if (UsingRuntimeAction) runtimeMoveAction.Enable();
+        else moveAction.action?.Enable(); 
     }
 
-    protected void OnDisable()
+    protected void OnDisable()   
     {
-        moveAction.action?.Disable();
+        if (UsingRuntimeAction) runtimeMoveAction.Disable();
+        else moveAction.action?.Disable();
+
         RestoreHeadPositionImmediate();
     }
+
+    void OnDestroy()
+    {
+        // Clean up the runtime action if we created one
+        if (UsingRuntimeAction) runtimeMoveAction.Dispose();
+    }
+
 
 
     void Update() 
@@ -129,6 +147,21 @@ public class HeadBobMoveProvider : LocomotionProvider
             // Even if we can't acquire exclusivity, still keep bob returning to neutral.
             DampenHeadBobToNeutral();
         }
+    }
+
+    void EnsureMoveActionBound()
+    {
+        if (!autoBindLeftThumbstick) return;
+        var assigned = moveAction.action;
+        if (assigned != null && assigned.bindings.Count > 0) return;
+
+        runtimeMoveAction = new InputAction("Runtime Move", InputActionType.Value, "<XRController>{LeftHand}/primary2DAxis");
+        runtimeMoveAction.AddBinding("<XRController>{LeftHand}/thumbstick");
+        runtimeMoveAction.AddBinding("<OculusTouchController>{LeftHand}/thumbstick");
+        runtimeMoveAction.AddBinding("<Gamepad>/leftStick"); // fallback for testing
+        runtimeMoveAction.Enable();
+
+        moveAction = new InputActionProperty(runtimeMoveAction);
     }
 
     void ApplyMovement(Vector3 moveDir, float inputMag)
